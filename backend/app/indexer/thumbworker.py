@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing
 import os
 import threading
 import time
@@ -67,7 +68,9 @@ class ThumbWorker:
                 err_rows.clear()
             last_flush = time.time()
 
-        with ProcessPoolExecutor(max_workers=self.workers, initializer=_init_proc) as pool:
+        # forkserver: fork aus einem Thread eines Multi-Thread-Prozesses kann deadlocken
+        ctx = multiprocessing.get_context("forkserver")
+        with ProcessPoolExecutor(max_workers=self.workers, initializer=_init_proc, mp_context=ctx) as pool:
             while not self.stop.is_set():
                 if time.time() - cache_at > 10:
                     src_cache = {r["id"]: (json.loads(r["ts_order"]), r["filename_pattern"])

@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from concurrent.futures import ThreadPoolExecutor
+
+from fastapi.responses import FileResponse, Response
 
 from .. import config
 from ..db import get_conn
@@ -158,3 +160,50 @@ def image_original(image_id: int):
     if not p.exists():
         raise not_found("Datei fehlt")
     return FileResponse(p, filename=p.name, headers=CACHE)
+
+
+_batch_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="batch")
+MAX_BATCH = 200
+
+
+def _thumb_bytes(image_id: int) -> bytes:
+    try:
+        r = image_thumb(image_id)
+        return open(r.path, "rb").read()
+    except Exception:
+        return b""
+
+
+def _preview_bytes(image_id: int) -> bytes:
+    try:
+        r = image_preview(image_id)
+        return open(r.path, "rb").read()
+    except Exception:
+        return b""
+
+
+def _pack(ids: list[int], blobs: list[bytes]) -> Response:
+    """Binärformat: 4 Byte Header-Länge (LE) | JSON [[id, länge], …] | Daten hintereinander.
+
+    Ein Request für viele Bilder – schont Traefik-Ratelimit (geteilter LAN-Bucket) und Authelia.
+    """
+    header = json.dumps([[i, len(b)] for i, b in zip(ids, blobs)]).encode()
+    body = len(header).to_bytes(4, "little") + header + b"".join(blobs)
+    return Response(body, media_type="application/octet-stream", headers={"Cache-Control": "private, max-age=3600"})
+
+
+def _batch(ids: str, fn) -> Response:
+    lst = parse_ids(ids) or []
+    if len(lst) > MAX_BATCH:
+        raise HTTPException(422, f"Maximal {MAX_BATCH} IDs pro Anfrage")
+    return _pack(lst, list(_batch_pool.map(fn, lst)))
+
+
+@router.get("/thumbs")
+def thumbs_batch(ids: str):
+    return _batch(ids, _thumb_bytes)
+
+
+@router.get("/previews")
+def previews_batch(ids: str):
+    return _batch(ids, _preview_bytes)

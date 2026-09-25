@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .api import events, images, sources
+from .api import events, images, jobs, projects, sources
 from .db import get_conn, migrate
 from .logging_setup import log, setup_logging
 
@@ -42,7 +42,8 @@ def create_app() -> FastAPI:
                 "max_parallel_renders": s.max_parallel_renders, "render_window": s.render_window,
                 "ntfy": bool(s.ntfy_url and s.ntfy_topic)}
 
-    for r in (sources.router, images.router, events.router):
+    projects.seed_presets()
+    for r in (sources.router, images.router, projects.router, jobs.router, events.router):
         app.include_router(r)
 
     if STATIC_DIR.is_dir():
