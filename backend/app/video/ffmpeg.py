@@ -30,6 +30,7 @@ QUALITY = {
 # Bitraten-Obergrenze je Stufe (Bits pro Pixel und Frame) – "capped CRF": Zeitraffer-Material ändert sich
 # von Bild zu Bild stark, reines CRF erzeugt sonst 50+ Mbit/s bei 1080p.
 CAP_BPP = {"small": 0.08, "standard": 0.15, "high": 0.30, "max": None}
+VAAPI_BITRATE_FACTOR = 1.5
 
 POSITIONS = {
     "tl": ("pad", "pad"), "tc": ("(w-text_w)/2", "pad"), "tr": ("w-text_w-pad", "pad"),
@@ -253,9 +254,11 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
     elif encoder == "libaom-av1":
         cmd += ["-cpu-used", "6", "-row-mt", "1"] + (["-b:v", f"{bitrate}k"] if bitrate else ["-crf", str(q), "-b:v", "0"])
     elif use_vaapi:
-        if bitrate or cap_kbps:  # VAAPI: gedeckelte VBR statt CQP, sonst explodiert die Dateigröße
-            br = bitrate or int(cap_kbps * 0.7)
-            cmd += ["-rc_mode", "VBR", "-b:v", f"{br}k", "-maxrate", f"{bitrate * 1.5 if bitrate else cap_kbps:.0f}k"]
+        if bitrate or cap_kbps:
+            # VAAPI (UHD 630) braucht für gleiche Qualität wie x264 ~1,5× Bitrate (SSIM-Messung 2026-09-25:
+            # 14 Mbit/s GPU ≙ 9,3 Mbit/s CPU) – deshalb Ziel = 1,5× Obergrenze, gedeckelte VBR statt CQP
+            br = bitrate or int(cap_kbps * VAAPI_BITRATE_FACTOR)
+            cmd += ["-rc_mode", "VBR", "-b:v", f"{br}k", "-maxrate", f"{int(br * 1.3)}k"]
         else:
             cmd += ["-rc_mode", "CQP", "-qp", str(q)]
         if encoder == "hevc_vaapi":

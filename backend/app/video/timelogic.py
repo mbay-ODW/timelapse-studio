@@ -106,7 +106,7 @@ BPP = {"small": 0.075, "standard": 0.14, "high": 0.27, "max": 0.9}
 CODEC_FACTOR = {"h264": 1.0, "h265": 0.6, "av1": 0.5}
 # Encoder-Durchsatz in Megapixel/s (CPU, 5 Threads, i7-8700-Klasse); vaapi deutlich schneller
 ENCODE_MPX_S = {("h264", "cpu"): 70, ("h265", "cpu"): 22, ("av1", "cpu"): 12,
-                ("h264", "vaapi"): 240, ("h265", "vaapi"): 200, ("av1", "vaapi"): 12}
+                ("h264", "vaapi"): 400, ("h265", "vaapi"): 400, ("av1", "vaapi"): 12}
 DECODE_MPX_S = 180  # JPEG-Decode + Skalierung der Quellbilder
 
 
@@ -119,6 +119,8 @@ def estimate(frames: int, fps: float, width: int, height: int, src_w: int, src_h
         size = bitrate_kbps * 1000 / 8 * frames / max(fps, 0.001)
     else:
         size = BPP.get(quality, BPP["standard"]) * CODEC_FACTOR.get(codec, 1.0) * px * frames / 8
+        if hw == "vaapi" and codec in ("h264", "h265"):
+            size *= 1.5  # GPU-Encoder braucht für gleiche Qualität mehr Bitrate (siehe ffmpeg.VAAPI_BITRATE_FACTOR)
     enc = ENCODE_MPX_S.get((codec, hw), ENCODE_MPX_S[(codec, "cpu")]) * 1e6
     dec = DECODE_MPX_S * 1e6
     per_frame = px / enc + (src_w * src_h) / dec
