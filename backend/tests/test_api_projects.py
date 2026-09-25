@@ -106,3 +106,39 @@ def test_batch_thumbs(client):
     assert [h[0] for h in header] == ids and header[-1][1] == 0 and all(h[1] > 0 for h in header[:5])
     assert len(body) == 4 + n + sum(h[1] for h in header)
     assert body[4 + n:4 + n + 4] == b"RIFF"  # WebP
+
+
+def test_chunked_upload_resume_and_zip(client, env):
+    import io
+    import zipfile as zf
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 36), (10, 20, 30)).save(buf, "JPEG")
+    data = buf.getvalue()
+    init = client.post("/api/uploads/init", json={"album": "Garten 2026", "filename": "IMG_20260601_120000.jpg",
+                                                 "size": len(data)}).json()
+    uid = init["upload_id"]
+    r = client.put(f"/api/uploads/{uid}?offset=0", content=data[:100])
+    assert r.json() == {"offset": 100, "done": False}
+    # falscher Offset → 409 mit aktuellem Stand (Resume)
+    assert client.put(f"/api/uploads/{uid}?offset=0", content=data[:10]).status_code == 409
+    again = client.post("/api/uploads/init", json={"album": "Garten 2026", "filename": "IMG_20260601_120000.jpg",
+                                                  "size": len(data)}).json()
+    assert again["offset"] == 100
+    done = client.put(f"/api/uploads/{uid}?offset=100", content=data[100:]).json()
+    assert done["done"] and done["files_added"] == 1
+    assert (env / "media" / "uploads" / "Garten 2026" / "IMG_20260601_120000.jpg").exists()
+
+    zbuf = io.BytesIO()
+    with zf.ZipFile(zbuf, "w") as z:
+        z.writestr("serie/a.jpg", data)
+        z.writestr("../../evil.jpg", data)
+        z.writestr("__MACOSX/._a.jpg", b"x")
+        z.writestr("notes.txt", b"x")
+    zd = zbuf.getvalue()
+    uid = client.post("/api/uploads/init", json={"album": "Zip", "filename": "x.zip", "size": len(zd)}).json()["upload_id"]
+    res = client.put(f"/api/uploads/{uid}?offset=0", content=zd).json()
+    assert res["files_added"] == 2
+    assert not (env / "media" / "evil.jpg").exists() and not (env / "evil.jpg").exists()
+    names = [a["name"] for a in client.get("/api/uploads/albums").json()]
+    assert names == ["Garten 2026", "Zip"]

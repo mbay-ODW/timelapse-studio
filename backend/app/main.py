@@ -11,7 +11,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .api import events, images, jobs, projects, sources
+from fastapi import Request
+
+from .api import events, images, jobs, projects, sources, uploads
 from .db import get_conn, migrate
 from .logging_setup import log, setup_logging
 
@@ -36,6 +38,10 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": VERSION, "worker_alive": worker_age is not None and worker_age < 30,
                 "ffmpeg": shutil.which("ffmpeg") is not None, "hwaccel": s.hwaccel}
 
+    @app.get("/api/me")
+    def me(request: Request):
+        return {"remote_user": request.headers.get("Remote-User")}
+
     @app.get("/api/info")
     def info():
         return {"version": VERSION, "hwaccel": s.hwaccel, "thumb_size": s.thumb_size,
@@ -43,7 +49,7 @@ def create_app() -> FastAPI:
                 "ntfy": bool(s.ntfy_url and s.ntfy_topic)}
 
     projects.seed_presets()
-    for r in (sources.router, images.router, projects.router, jobs.router, events.router):
+    for r in (sources.router, images.router, projects.router, jobs.router, uploads.router, events.router):
         app.include_router(r)
 
     if STATIC_DIR.is_dir():
