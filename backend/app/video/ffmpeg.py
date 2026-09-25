@@ -9,6 +9,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
@@ -26,6 +27,10 @@ QUALITY = {
     "h264_vaapi": {"small": (28, None), "standard": (24, None), "high": (21, None), "max": (18, None)},
     "hevc_vaapi": {"small": (30, None), "standard": (26, None), "high": (23, None), "max": (20, None)},
 }
+# Bitraten-Obergrenze je Stufe (Bits pro Pixel und Frame) – "capped CRF": Zeitraffer-Material ändert sich
+# von Bild zu Bild stark, reines CRF erzeugt sonst 50+ Mbit/s bei 1080p.
+CAP_BPP = {"small": 0.08, "standard": 0.15, "high": 0.30, "max": None}
+
 POSITIONS = {
     "tl": ("pad", "pad"), "tc": ("(w-text_w)/2", "pad"), "tr": ("w-text_w-pad", "pad"),
     "bl": ("pad", "h-text_h-pad"), "bc": ("(w-text_w)/2", "h-text_h-pad"), "br": ("w-text_w-pad", "h-text_h-pad"),
@@ -92,12 +97,19 @@ class RenderPlan:
     text_files: list[Path] = field(default_factory=list)
 
 
+def rate(fps: float) -> Fraction:
+    """fps als exakter Bruch (29.97 → 30000/1001)."""
+    return Fraction(fps).limit_denominator(1001)
+
+
 def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: int, output: Path,
           tmp_dir: Path, hwaccel: str = "none", vaapi_device: str = "/dev/dri/renderD128",
           threads: int = 4, preview: bool = False, mixed_sizes: bool = False,
           audio_file: Path | None = None) -> RenderPlan:
     p = params
     fps = float(p["fps"])
+    fr = rate(fps)
+    fr_s = f"{fr.numerator}/{fr.denominator}"
     geo = output_geometry(p, src_w, src_h)
     ow, oh = geo["out"]["w"], geo["out"]["h"]
     if preview:  # V-3: 480p-Proxy (kürzere Kante 480)
@@ -111,8 +123,9 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
     if mixed_sizes:  # Uploads unterschiedlicher Größe auf ein Raster bringen
         chain.append(f"scale={src_w}:{src_h}:force_original_aspect_ratio=decrease,"
                      f"pad={src_w}:{src_h}:(ow-iw)/2:(oh-ih)/2,setsar=1")
-    # exakt ein Frame je Bild; fps= fixiert die Link-Framerate (sonst rechnen tpad/fade falsch)
-    chain.append(f"setpts=N/({fps}*TB),fps={fps}")
+    # Exakt ein Frame je Bild: ganzzahlige Zeitbasis 1/fps + pts=N (N/(fps*TB) mit µs-Zeitbasis rundet
+    # und ließ bei 2.023 Bildern 5 Frames fallen). fps= setzt die Link-Framerate für tpad/fade.
+    chain.append(f"settb={fr.denominator}/{fr.numerator},setpts=N,fps={fr_s}")
     c = geo["crop"]
     if (c["w"], c["h"]) != (src_w, src_h):
         chain.append(f"crop={c['w']}:{c['h']}:{c['x']}:{c['y']}")
@@ -162,7 +175,7 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
         fs = max(12, int(oh * 0.06))
         total_frames += round(dur * fps)
         graph.append(
-            f"color=c=black:s={ow}x{oh}:r={fps}:d={dur},drawtext=fontfile={FONT_BOLD}:"
+            f"color=c=black:s={ow}x{oh}:r={fr_s}:d={dur},drawtext=fontfile={FONT_BOLD}:"
             f"textfile='{_esc_filter(str(tf))}':fontsize={fs}:fontcolor=white:line_spacing={fs // 3}:"
             f"x=(w-text_w)/2:y=(h-text_h)/2,format=yuv420p,setsar=1[{label}]")
         return f"[{label}]"
@@ -204,7 +217,7 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
         fo = float(p["audio"].get("fade_out_s") or 0)
         af = f"afade=t=out:st={max(0.0, duration - fo):.3f}:d={fo}" if fo > 0 else "anull"
         cmd += ["-map", "1:a:0", "-af", af, "-c:a", "aac", "-b:a", "192k", "-shortest"]
-    cmd += ["-fps_mode", "cfr", "-r", f"{fps:g}", "-frames:v", str(total_frames)]
+    cmd += ["-fps_mode", "cfr", "-r", fr_s, "-frames:v", str(total_frames)]
     cmd += ["-filter_complex_threads", str(threads)]
 
     ex = p["expert"]
@@ -217,20 +230,32 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
         preset = ex.get("preset") or preset
     bitrate = int(ex.get("bitrate_kbps") or 0) if ex["enabled"] and not preview else 0
     cmd += ["-c:v", encoder]
+    cap = CAP_BPP.get(q_level) if not (ex["enabled"] and not preview) else None
+    cap_kbps = int(cap * ow * oh * fps / 1000) if cap else 0
     if encoder in ("libx264", "libx265"):
         cmd += ["-preset", str(preset), "-threads", str(threads)]
-        cmd += ["-b:v", f"{bitrate}k", "-maxrate", f"{int(bitrate * 1.5)}k", "-bufsize", f"{bitrate * 2}k"] \
-            if bitrate else ["-crf", str(q)]
+        if bitrate:
+            cmd += ["-b:v", f"{bitrate}k", "-maxrate", f"{int(bitrate * 1.5)}k", "-bufsize", f"{bitrate * 2}k"]
+        else:
+            cmd += ["-crf", str(q)]
+            if cap_kbps:
+                cmd += ["-maxrate", f"{cap_kbps}k", "-bufsize", f"{cap_kbps * 2}k"]
         if encoder == "libx265":
             cmd += ["-tag:v", "hvc1", "-x265-params", "log-level=error"]
         cmd += ["-pix_fmt", "yuv420p"]
     elif encoder == "libsvtav1":
         cmd += ["-preset", str(preset)] + (["-b:v", f"{bitrate}k"] if bitrate else ["-crf", str(q)])
+        if cap_kbps and not bitrate:
+            cmd += ["-maxrate", f"{cap_kbps}k"]
         cmd += ["-pix_fmt", "yuv420p"]
     elif encoder == "libaom-av1":
         cmd += ["-cpu-used", "6", "-row-mt", "1"] + (["-b:v", f"{bitrate}k"] if bitrate else ["-crf", str(q), "-b:v", "0"])
     elif use_vaapi:
-        cmd += ["-b:v", f"{bitrate}k", "-rc_mode", "VBR"] if bitrate else ["-rc_mode", "CQP", "-qp", str(q)]
+        if bitrate or cap_kbps:  # VAAPI: gedeckelte VBR statt CQP, sonst explodiert die Dateigröße
+            br = bitrate or int(cap_kbps * 0.7)
+            cmd += ["-rc_mode", "VBR", "-b:v", f"{br}k", "-maxrate", f"{bitrate * 1.5 if bitrate else cap_kbps:.0f}k"]
+        else:
+            cmd += ["-rc_mode", "CQP", "-qp", str(q)]
         if encoder == "hevc_vaapi":
             cmd += ["-tag:v", "hvc1"]
     cmd += ["-movflags", "+faststart", "-f", "mp4", str(output)]

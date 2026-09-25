@@ -72,8 +72,9 @@ def suggest_for_length(frames: int, target_s: float, target_fps: float, *, extra
         return out
     # (a) fps so wählen, dass die Länge passt
     fps_a = round(frames / body, 3)
-    out.append(Suggestion("fps", f"fps auf {fps_a:g} setzen", fps_a, frames, frames / fps_a + extra_s,
-                          notes=warnings(fps_a, frames)))
+    if 0.1 <= fps_a <= 240:  # außerhalb lässt normalize() den Wert nicht zu
+        out.append(Suggestion("fps", f"fps auf {fps_a:g} setzen", fps_a, frames, frames / fps_a + extra_s,
+                              notes=warnings(fps_a, frames)))
     wanted = max(2, round(target_fps * body))
     # (b) jedes n-te Bild – ganzzahliges n, bestes von floor/ceil
     if frames > wanted:
@@ -84,8 +85,9 @@ def suggest_for_length(frames: int, target_s: float, target_fps: float, *, extra
             if best is None or abs(f - wanted) < abs(best[1] - wanted):
                 best = (n, f)
         n, f = best
-        out.append(Suggestion("nth", f"jedes {n * current_n}. Bild bei {target_fps:g} fps", target_fps, f,
-                              f / target_fps + extra_s, n=n, exact=abs(f - wanted) <= 1))
+        if n > 1:  # n = 1 wäre keine Änderung – dann hilft nur fps oder exakte Begrenzung
+            out.append(Suggestion("nth", f"jedes {n * current_n}. Bild bei {target_fps:g} fps", target_fps, f,
+                                  f / target_fps + extra_s, n=n, exact=abs(f - wanted) <= 1))
         # (c) exakt: auf N Bilder begrenzen (gleichmäßig über die Zeit)
         out.append(Suggestion("limit", f"auf {wanted} Bilder begrenzen bei {target_fps:g} fps", target_fps,
                               wanted, wanted / target_fps + extra_s, limit=wanted, exact=True))
@@ -98,8 +100,9 @@ def suggest_for_length(frames: int, target_s: float, target_fps: float, *, extra
 
 # --- Schätzungen (P-31) ------------------------------------------------------------------
 
-# Bits pro Pixel und Frame bei Zeitraffer-Material (hohe Bild-zu-Bild-Änderung)
-BPP = {"small": 0.05, "standard": 0.09, "high": 0.15, "max": 0.28}
+# Bits pro Pixel und Frame bei Zeitraffer-Material (hohe Bild-zu-Bild-Änderung); nahe an den
+# Obergrenzen aus ffmpeg.CAP_BPP, weil Kamera-Zeitraffer die Deckelung praktisch immer erreicht
+BPP = {"small": 0.075, "standard": 0.14, "high": 0.27, "max": 0.9}
 CODEC_FACTOR = {"h264": 1.0, "h265": 0.6, "av1": 0.5}
 # Encoder-Durchsatz in Megapixel/s (CPU, 5 Threads, i7-8700-Klasse); vaapi deutlich schneller
 ENCODE_MPX_S = {("h264", "cpu"): 70, ("h265", "cpu"): 22, ("av1", "cpu"): 12,
