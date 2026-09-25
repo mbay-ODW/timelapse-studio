@@ -286,7 +286,9 @@ def _size_speed_factors(codec: str) -> tuple[float, float]:
             sf.append(r["output_size"] / est["size_bytes"])
         if est.get("render_s") and r["finished_at"] and r["started_at"]:
             vf.append((r["finished_at"] - r["started_at"]) / max(est["render_s"], 1))
-    return (float(np.median(sf)) if sf else 1.0, float(np.median(vf)) if vf else 1.0)
+    def robust(v: list[float]) -> float:  # Ausreißer (z. B. alte Jobs mit anderer Kodierung) begrenzen
+        return float(np.clip(np.median(v), 0.33, 3.0)) if v else 1.0
+    return robust(sf), robust(vf)
 
 
 def video_info(pid: int, params: dict, count: int, ev) -> dict:

@@ -150,3 +150,24 @@ def test_recover_after_restart(setup):
     assert j["status"] == "interrupted" and "neu starten" in j["error"]
     new = jobs.rerun_job(jid, type("R", (), {"headers": {}})())
     assert new["status"] == "queued" and new["frames_total"] == 60
+
+
+def test_mixed_sizes_keep_exact_frame_count(setup, env):
+    """Vereinzelte Bilder in anderer Größe dürfen keine Frames kosten (Filtergraph-Reinit)."""
+    from PIL import Image
+    from app.api import jobs
+    from app.db import get_conn
+    from app.pipeline import service
+    from app.video.params import normalize
+    pid = setup
+    conn = get_conn()
+    rows = conn.execute("SELECT id, rel_path FROM image ORDER BY taken_ms").fetchall()
+    for r in rows[5::7]:  # jedes 7. Bild halb so groß
+        Image.new("RGB", (320, 180), (200, 50, 50)).save(env / "sources" / "cam" / r["rel_path"], "JPEG")
+        conn.execute("UPDATE image SET width=320, height=180 WHERE id=?", (r["id"],))
+    ev = service.evaluate(pid)
+    jid = jobs.create_job(pid, "render", normalize({"fps": 25, "resolution": "source"}), ev.ids.copy(), None, None)
+    j = _run(jid)
+    assert j["status"] == "done", j["error"]
+    info = ffprobe(jobs._output(jid))
+    assert info["frames"] == 60 and (info["w"], info["h"]) == (640, 360)

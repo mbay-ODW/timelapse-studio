@@ -120,7 +120,7 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
     use_vaapi = encoder.endswith("_vaapi")
 
     chain: list[str] = []
-    if mixed_sizes:  # Uploads unterschiedlicher Größe auf ein Raster bringen
+    if mixed_sizes:  # unterschiedliche Bildgrößen auf ein Raster bringen (scale passt sich pro Frame an)
         chain.append(f"scale={src_w}:{src_h}:force_original_aspect_ratio=decrease,"
                      f"pad={src_w}:{src_h}:(ow-iw)/2:(oh-ih)/2,setsar=1")
     # Exakt ein Frame je Bild: ganzzahlige Zeitbasis 1/fps + pts=N (N/(fps*TB) mit µs-Zeitbasis rundet
@@ -208,7 +208,9 @@ def build(params: dict, *, concat_file: Path, n_frames: int, src_w: int, src_h: 
            "-progress", "pipe:1", "-nostats"]
     if use_vaapi:
         cmd += ["-init_hw_device", f"vaapi=va:{vaapi_device}", "-filter_hw_device", "va"]
-    cmd += ["-f", "concat", "-safe", "0", "-i", str(concat_file)]
+    # -reinit_filter 0: bei Bildern anderer Größe (z. B. vereinzelte 1280×720-Snapshots) den Filtergraphen
+    # NICHT neu aufbauen – sonst beginnt setpts=N wieder bei 0 und ffmpeg verwirft Frames.
+    cmd += ["-reinit_filter", "0", "-f", "concat", "-safe", "0", "-i", str(concat_file)]
     has_audio = audio_file is not None and not preview
     if has_audio:
         cmd += ["-i", str(audio_file)]
