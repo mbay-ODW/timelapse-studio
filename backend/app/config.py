@@ -30,7 +30,8 @@ class Settings:
     ffmpeg_threads: int = field(default_factory=lambda: _int("FFMPEG_THREADS", _default_threads()))
     thumb_size: int = field(default_factory=lambda: _int("THUMB_SIZE", 320))
     proxy_size: int = field(default_factory=lambda: _int("PROXY_SIZE", 960))
-    index_workers: int = field(default_factory=lambda: _int("INDEX_WORKERS", max(1, (os.cpu_count() or 2) - 2)))
+    # Prozesse für Thumbnails; auf HDD-Pools I/O-gebunden → mehr als Kerne sinnvoll
+    index_workers: int = field(default_factory=lambda: _int("INDEX_WORKERS", 8))
     hwaccel: str = field(default_factory=lambda: os.environ.get("HWACCEL", "none").lower())
     vaapi_device: str = field(default_factory=lambda: os.environ.get("VAAPI_DEVICE", "/dev/dri/renderD128"))
     # z. B. "22:00-06:00" – große Render-Jobs nur in diesem Fenster; leer = immer

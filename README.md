@@ -28,7 +28,7 @@ Anforderungen: [`docs/requirements.md`](docs/requirements.md)
 | `HWACCEL` | `none` | `none` \| `vaapi` \| `qsv` |
 | `MAX_PARALLEL_RENDERS` | 1 | gleichzeitige Render-Jobs |
 | `FFMPEG_THREADS` | Kerne − 1 | Threads pro ffmpeg |
-| `INDEX_WORKERS` | Kerne − 2 | Prozesse für Thumbnails |
+| `INDEX_WORKERS` | 10 | Prozesse für Thumbnails (I/O-gebunden, laufen mit `nice 10`) |
 | `THUMB_SIZE` | 320 | lange Kante der Thumbnails |
 | `RENDER_WINDOW` | leer | z. B. `22:00-06:00` – finale Renders nur in diesem Fenster |
 | `SCAN_INTERVAL_MIN` | 60 | automatischer Rescan (0 = aus) |

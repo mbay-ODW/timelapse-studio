@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
@@ -20,6 +21,14 @@ from .scanner import provisional_ts
 from .sources import thumb_path
 
 logger = logging.getLogger("thumbs")
+
+
+def _init_proc() -> None:
+    # Index-Arbeit ist Hintergrundlast: anderen Stacks den Vortritt lassen
+    try:
+        os.nice(10)
+    except OSError:
+        pass
 FETCH = 256
 FLUSH_EVERY = 200
 
@@ -33,10 +42,10 @@ class ThumbWorker:
     def run(self) -> None:
         conn = get_conn()
         size = config.settings.thumb_size
-        max_in_flight = self.workers * 4
+        max_in_flight = self.workers * 3
         src_cache: dict[int, tuple[list[str], str]] = {}
         cache_at = 0.0
-        cursor = 0
+        cursor: tuple[int, str] = (0, "")  # (source_id, rel_path) ≈ Schreibreihenfolge auf der Platte
         queue: list = []
         in_flight: dict[Future, object] = {}
         done_rows: list[tuple] = []
@@ -58,7 +67,7 @@ class ThumbWorker:
                 err_rows.clear()
             last_flush = time.time()
 
-        with ProcessPoolExecutor(max_workers=self.workers) as pool:
+        with ProcessPoolExecutor(max_workers=self.workers, initializer=_init_proc) as pool:
             while not self.stop.is_set():
                 if time.time() - cache_at > 10:
                     src_cache = {r["id"]: (json.loads(r["ts_order"]), r["filename_pattern"])
@@ -68,10 +77,11 @@ class ThumbWorker:
                     queue = conn.execute(
                         "SELECT i.id, i.source_id, i.rel_path, i.mtime_ns, s.path FROM image i"
                         " JOIN source s ON s.id = i.source_id"
-                        " WHERE i.thumb_status = 0 AND i.id > ? AND s.enabled = 1 AND s.present = 1"
-                        " ORDER BY i.id LIMIT ?", (cursor, FETCH)).fetchall()
+                        " WHERE i.thumb_status = 0 AND (i.source_id, i.rel_path) > (?, ?)"
+                        " AND s.enabled = 1 AND s.present = 1"
+                        " ORDER BY i.source_id, i.rel_path LIMIT ?", (*cursor, FETCH)).fetchall()
                     if queue:
-                        cursor = queue[-1]["id"]
+                        cursor = (queue[-1]["source_id"], queue[-1]["rel_path"])
                 while queue and len(in_flight) < max_in_flight:
                     r = queue.pop(0)
                     f = pool.submit(process, r["id"], f'{r["path"]}/{r["rel_path"]}',
@@ -79,7 +89,7 @@ class ThumbWorker:
                     in_flight[f] = r
                 if not in_flight:
                     flush()
-                    cursor = 0  # alles abgearbeitet → nächste Runde von vorn (neue/zurückgesetzte Bilder)
+                    cursor = (0, "")  # alles abgearbeitet → nächste Runde von vorn (neue/zurückgesetzte Bilder)
                     self.rate = 0.0
                     self.stop.wait(2.0)
                     continue
