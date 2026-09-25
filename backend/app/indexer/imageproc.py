@@ -74,7 +74,10 @@ def process(image_id: int, src: str, thumb_path: str, thumb_size: int) -> ProcRe
             if orientation in (5, 6, 7, 8):
                 w, h = h, w
             if raw.format == "JPEG":
-                raw.draft("RGB", (thumb_size, thumb_size))
+                # Zielgröße seitenrichtig anfordern → DCT-Skalierung bis 1/8 (z. B. 2560×1440 → 320×180)
+                rw, rh = raw.size
+                scale = thumb_size / max(rw, rh)
+                raw.draft("RGB", (max(1, int(rw * scale)), max(1, int(rh * scale))))
             im = ImageOps.exif_transpose(raw)
             im = im.convert("RGB")
             im.thumbnail((thumb_size, thumb_size), Image.Resampling.BILINEAR, reducing_gap=2.0)
