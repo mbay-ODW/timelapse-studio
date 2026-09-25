@@ -1,0 +1,11 @@
+.spike/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/dist/
+backend/app/static/
+dev-data/
+*.tar.gz
+.DS_Store
