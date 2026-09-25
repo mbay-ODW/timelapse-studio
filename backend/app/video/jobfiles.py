@@ -38,9 +38,12 @@ def output_name(project: str, res_label: str, fps: float, preview: bool, job_id:
     base = f"{safe_name(project)}_{stamp}_{res_label}_{fps_s}fps"
     if preview:
         base = f"preview_{base}_{job_id}"
+    # eindeutig gegenüber vorhandenen Dateien UND anderen Jobs (die ihre Datei evtl. noch nicht geschrieben haben)
+    taken = {r[0] for r in get_conn().execute("SELECT output_path FROM job WHERE output_path LIKE ?",
+                                               (str(config.settings.renders_dir / base) + "%",))}
     out = config.settings.renders_dir / f"{base}.mp4"
     i = 2
-    while out.exists():
+    while out.exists() or str(out) in taken:
         out = config.settings.renders_dir / f"{base}-{i}.mp4"
         i += 1
     return str(out)

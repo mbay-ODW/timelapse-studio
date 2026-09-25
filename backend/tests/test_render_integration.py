@@ -135,6 +135,16 @@ def test_cancel_within_5s_and_cleanup(setup, env):
     assert not list((env / "media" / "tmp").iterdir())
 
 
+def test_output_names_unique_for_parallel_jobs(setup):
+    from app.api import jobs
+    from app.pipeline import service
+    from app.video.params import normalize
+    ev = service.evaluate(setup)
+    a = jobs.get_job(jobs.create_job(setup, "render", normalize({}), ev.ids.copy(), None, None))
+    b = jobs.get_job(jobs.create_job(setup, "render", normalize({}), ev.ids.copy(), None, None))
+    assert a["output_name"] != b["output_name"]
+
+
 def test_recover_after_restart(setup):
     from app.api import jobs
     from app.db import get_conn
