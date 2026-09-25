@@ -250,3 +250,14 @@ pre.log { max-height: 320px; overflow: auto; background: var(--surface-2); paddi
 .dropzone.over, .dropzone:hover { border-color: var(--accent); background: var(--accent-soft); }
 .upload-list { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
 .upload-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.nav::-webkit-scrollbar { display: none; }
+.header > * { flex-shrink: 0; }
+.header > .nav { flex-shrink: 1; }
+@media (max-width: 720px) {
+  .header .badge { display: none; }
+  .jobs-btn .jobs-label { display: none; }
+  .header .spacer { flex: 0 0 0; }
+  .header { gap: 4px; }
+  .nav a { padding: 6px 6px; }
+}

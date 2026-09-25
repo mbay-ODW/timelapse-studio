@@ -22,7 +22,7 @@ export function JobsDropdown() {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button className={'jobs-btn' + (active.length ? ' busy' : '')} onClick={() => setOpen(!open)}>
-        ⚙ Jobs{active.length > 0 && <span className="count">{active.length}</span>}
+        ⚙<span className="jobs-label"> Jobs</span>{active.length > 0 && <span className="count">{active.length}</span>}
         {running && <span className="mini-progress"><span style={{ width: `${running.percent}%` }} /></span>}
       </button>
       {open && (
