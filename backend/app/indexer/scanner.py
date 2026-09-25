@@ -31,11 +31,13 @@ def _walk(root: Path):
             with os.scandir(d) as it:
                 for e in it:
                     name = e.name
-                    if name.startswith(".") or name.startswith("@eaDir"):
+                    if name.startswith("."):
                         continue
                     try:
                         if e.is_dir(follow_symlinks=False):
-                            stack.append(Path(e.path))
+                            # Synology-Systemordner (@eaDir, @Thumbnail, @PushServ, #recycle …) überspringen
+                            if not name.startswith(("@", "#")):
+                                stack.append(Path(e.path))
                         elif e.is_file() and os.path.splitext(name)[1].lower() in SUPPORTED_EXT:
                             st = e.stat()
                             yield os.path.relpath(e.path, root), st.st_size, st.st_mtime_ns

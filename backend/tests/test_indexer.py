@@ -32,6 +32,8 @@ def test_scan_incremental_and_thumbs(env):
                                brightness_fn=lambda t: 20 if t.hour < 8 else 200)
     (src / "broken.jpg").write_bytes(b"not a jpeg")
     (src / "notes.txt").write_text("ignore me")
+    (src / "@Thumbnail").mkdir()
+    (src / "@Thumbnail" / paths[0].name).write_text("/9j/4AAQSk")  # Synology-Vorschau, base64
     sync_sources()
     conn = db.get_conn()
     sid = conn.execute("SELECT id FROM source WHERE name='cam'").fetchone()[0]
