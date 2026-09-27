@@ -10,7 +10,7 @@ export const RULE_LABEL: Record<string, string> = {
 }
 
 const DEFAULTS: Record<string, Record<string, any>> = {
-  sources: { source_ids: [] }, date_range: { from: '', to: '' }, time_window: { from: '07:00', to: '19:00' },
+  sources: { source_ids: [] }, date_range: { mode: 'exclude', ranges: [{ from: '', to: '' }] }, time_window: { from: '07:00', to: '19:00' },
   weekdays: { days: [0, 1, 2, 3, 4] }, nth: { n: 10, offset: 0 },
   interval: { interval_s: 3600, strategy: 'first', at: '12:00' }, limit: { n: 1000 },
   brightness: { min: 40, max: 255 }, dedupe: { threshold: 3 }, manual: {}, order: { direction: 'desc' },
@@ -110,13 +110,32 @@ function RuleEditor({ rule, onChange, sources, evaluation, onClearMarks }: {
       )
     }
     case 'date_range': {
-      const withTime = (p.from ?? '').includes('T') || (p.to ?? '').includes('T')
-      const type = withTime ? 'datetime-local' : 'date'
+      // alte Form {from, to} → ein Zeitraum
+      const ranges: { from: string; to: string }[] = p.ranges ?? [{ from: p.from ?? '', to: p.to ?? '' }]
+      const mode = p.mode ?? 'include'
+      const setRanges = (r: typeof ranges) => onChange({ ...rule, params: { mode, ranges: r } })
       return (
-        <div className="row wrap">
-          <label className="field">von<input type={type} value={p.from ?? ''} onChange={(e) => set({ from: e.target.value })} /></label>
-          <label className="field">bis{withTime ? ' (exkl.)' : ' (inkl.)'}<input type={type} value={p.to ?? ''} onChange={(e) => set({ to: e.target.value })} /></label>
-          {withTime && <button className="ghost small" onClick={() => set({ from: (p.from ?? '').slice(0, 10), to: (p.to ?? '').slice(0, 10) })}>nur Datum</button>}
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="seg">
+            <button className={mode === 'include' ? 'active' : ''} onClick={() => onChange({ ...rule, params: { mode: 'include', ranges } })}>nur diese behalten</button>
+            <button className={mode === 'exclude' ? 'active' : ''} onClick={() => onChange({ ...rule, params: { mode: 'exclude', ranges } })}>diese ausschließen</button>
+          </div>
+          {ranges.map((r, k) => {
+            const withTime = r.from.includes('T') || r.to.includes('T')
+            const type = withTime ? 'datetime-local' : 'date'
+            const upd = (patch: Partial<typeof r>) => setRanges(ranges.map((x, j) => (j === k ? { ...x, ...patch } : x)))
+            return (
+              <div key={k} className="row wrap range-row">
+                <input type={type} value={r.from} title="von" onChange={(e) => upd({ from: e.target.value })} />
+                <span className="muted">–</span>
+                <input type={type} value={r.to} title={withTime ? 'bis (exklusiv)' : 'bis (inklusive)'} onChange={(e) => upd({ to: e.target.value })} />
+                {withTime && <button className="ghost small" title="Uhrzeit entfernen" onClick={() => upd({ from: r.from.slice(0, 10), to: r.to.slice(0, 10) })}>nur Datum</button>}
+                <button className="icon ghost" title="Zeitraum entfernen" disabled={ranges.length === 1} onClick={() => setRanges(ranges.filter((_, j) => j !== k))}>✕</button>
+              </div>
+            )
+          })}
+          <button className="ghost small" style={{ alignSelf: 'flex-start' }} onClick={() => setRanges([...ranges, { from: '', to: '' }])}>+ weiterer Zeitraum</button>
+          <span className="muted small">Enddatum zählt mit. Tipp: im Histogramm einen Bereich ziehen.</span>
         </div>
       )
     }

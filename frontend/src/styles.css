@@ -261,3 +261,6 @@ pre.log { max-height: 320px; overflow: auto; background: var(--surface-2); paddi
   .header { gap: 4px; }
   .nav a { padding: 6px 6px; }
 }
+.range-row { flex-wrap: nowrap; gap: 4px; }
+.range-row input { flex: 1 1 0; min-width: 0; width: 0; font-size: 12px; padding: 5px 4px; }
+.range-choice { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--accent-soft); border-bottom: 1px solid var(--border); }

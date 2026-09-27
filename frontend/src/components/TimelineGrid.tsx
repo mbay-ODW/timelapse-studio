@@ -148,8 +148,9 @@ export const TimelineGrid = forwardRef<GridHandle, Props>(function TimelineGrid(
     }
     if (visibleDays[0]) onVisibleDayChange?.(visibleDays[0])
     return () => { alive = false }
+    // requestSelection wechselt mit jeder neuen Auswertung → sichtbare Tage neu markieren
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKey, sourcesParam])
+  }, [visibleKey, sourcesParam, requestSelection])
 
   useEffect(() => { setDays({}) }, [sourcesParam])
 

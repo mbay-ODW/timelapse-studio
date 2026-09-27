@@ -144,3 +144,16 @@ def test_performance_344k():
     r = run(U, rules, Marks(exclude=set(range(1, 5000))))
     day_distribution(U, r.sel)
     assert time.perf_counter() - t0 < 1.0
+
+
+def test_date_range_exclude_and_multiple_ranges():
+    U = make(SERIES)  # 01.–03.06., je 48 Bilder
+    ex = run(U, [{"type": "date_range", "params": {"mode": "exclude", "ranges": [{"from": "2026-06-02", "to": "2026-06-02"}]}}])
+    assert len(ex.sel) == 96 and not any(ms(2026, 6, 2) <= U.t[i] < ms(2026, 6, 3) for i in ex.sel)
+    inc = run(U, [{"type": "date_range", "params": {"mode": "include", "ranges": [
+        {"from": "2026-06-01", "to": "2026-06-01"}, {"from": "2026-06-03T12:00", "to": "2026-06-03T13:00"}]}}])
+    assert len(inc.sel) == 48 + 2
+    # Stundenbereich ausschneiden, leere Bereiche ignorieren
+    ex2 = run(U, [{"type": "date_range", "params": {"mode": "exclude", "ranges": [
+        {"from": "2026-06-01T00:00", "to": "2026-06-01T06:00"}, {"from": "", "to": ""}]}}])
+    assert len(ex2.sel) == 144 - 12

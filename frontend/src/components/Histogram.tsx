@@ -14,7 +14,9 @@ export function Histogram({ items, selected, sizeMs, onRange, height = 70, range
   const canvas = useRef<HTMLCanvasElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(600)
-  const [drag, setDrag] = useState<[number, number] | null>(null)
+  const [drag, setDragState] = useState<[number, number] | null>(null)
+  const dragRef = useRef<[number, number] | null>(null)  // Handler lesen immer den aktuellen Stand
+  const setDrag = (d: [number, number] | null) => { dragRef.current = d; setDragState(d) }
   const [hover, setHover] = useState<{ x: number; text: string } | null>(null)
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export function Histogram({ items, selected, sizeMs, onRange, height = 70, range
       onPointerDown={(e) => {
         if (!onRange) return
         const x = e.clientX - wrap.current!.getBoundingClientRect().left
-        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+        try { (e.target as HTMLElement).setPointerCapture(e.pointerId) } catch { /* synthetische Events */ }
         setDrag([tOf(x), tOf(x)])
       }}
       onPointerMove={(e) => {
@@ -76,11 +78,12 @@ export function Histogram({ items, selected, sizeMs, onRange, height = 70, range
         const t = snap(tOf(x))
         const it = items.find((i) => i[0] === t)
         setHover({ x, text: `${sizeMs >= 86_400_000 ? fmtDate(t) : fmtDateTime(t).slice(0, 16)} · ${it ? it[1] : 0} Bilder${selected?.get(t) ? ` · ${selected.get(t)} ausgewählt` : ''}` })
-        if (drag) setDrag([drag[0], tOf(x)])
+        if (dragRef.current) setDrag([dragRef.current[0], tOf(x)])
       }}
       onPointerUp={() => {
-        if (drag && onRange) {
-          const a = snap(Math.min(...drag)), b = snap(Math.max(...drag)) + sizeMs
+        const d = dragRef.current
+        if (d && onRange) {
+          const a = snap(Math.min(...d)), b = snap(Math.max(...d)) + sizeMs
           if (b - a >= sizeMs) onRange(a, b)
         }
         setDrag(null)

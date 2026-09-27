@@ -80,11 +80,20 @@ export function ProjectEditor() {
     try { setProject(await api.patch<Project>(`/api/projects/${pid}`, { name })) } catch (e) { toastError(e) }
   }
 
-  const setDateRange = (from: string, to: string) => {
-    const i = rules.findIndex((r) => r.type === 'date_range')
-    const r: Rule = { type: 'date_range', enabled: true, params: { from, to } }
-    saveRules(i >= 0 ? rules.map((x, j) => (j === i ? { ...x, ...r, id: x.id } : x)) : [...rules, r])
-    toast(`Datumsfilter: ${from.replace('T', ' ')} – ${to.replace('T', ' ')}`)
+  const setDateRange = (from: string, to: string, mode: 'include' | 'exclude') => {
+    const range = { from, to }
+    const same = (r: Rule) => r.type === 'date_range' && (r.params.mode ?? 'include') === mode
+    const i = rules.findIndex(same)
+    let next: Rule[]
+    if (i < 0) next = [...rules, { type: 'date_range', enabled: true, params: { mode, ranges: [range] } }]
+    else if (mode === 'exclude') {
+      // weitere Lücke an die vorhandene Ausschluss-Regel anhängen
+      const r = rules[i]
+      const ranges = (r.params.ranges ?? [{ from: r.params.from ?? '', to: r.params.to ?? '' }]).filter((x: typeof range) => x.from || x.to)
+      next = rules.map((x, j) => (j === i ? { ...x, enabled: true, params: { mode, ranges: [...ranges, range] } } : x))
+    } else next = rules.map((x, j) => (j === i ? { ...x, enabled: true, params: { mode, ranges: [range] } } : x))
+    saveRules(next)
+    toast(`${mode === 'exclude' ? 'Ausgeschlossen' : 'Nur noch'}: ${from.replace('T', ' ')} – ${to.replace('T', ' ')}`)
   }
   const setMarks = async (ids: number[], mode: 'include' | 'exclude' | 'clear') => {
     await api.post(`/api/projects/${pid}/marks`, { ids, mode })

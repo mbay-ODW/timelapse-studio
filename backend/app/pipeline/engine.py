@@ -113,18 +113,36 @@ def r_sources(U, sel, p, _m):
     return sel[np.isin(U.src[sel], np.asarray(ids, np.int32))]
 
 
-def r_date_range(U, sel, p, _m):
-    lo = parse_date(p.get("from"))
-    hi = parse_date(p.get("to"))
-    if hi is not None and len(p.get("to", "")) == 10:
-        hi += DAY_MS  # Enddatum inklusive
-    t = U.t[sel]
-    mask = np.ones(len(sel), bool)
+def _range_mask(t: np.ndarray, frm: str | None, to: str | None) -> np.ndarray:
+    lo = parse_date(frm)
+    hi = parse_date(to)
+    if hi is not None and len(to or "") == 10:
+        hi += DAY_MS  # reines Enddatum ist inklusive
+    mask = np.ones(len(t), bool)
     if lo is not None:
         mask &= t >= lo
     if hi is not None:
         mask &= t < hi
-    return sel[mask]
+    return mask
+
+
+def r_date_range(U, sel, p, _m):
+    """Zeiträume behalten (mode=include) oder herausschneiden (mode=exclude).
+
+    params: {mode, ranges: [{from, to}, …]}; alte Form {from, to} gilt als ein Zeitraum.
+    Bei include zählt die Vereinigung aller Zeiträume, bei exclude fällt jeder Zeitraum weg.
+    """
+    ranges = p.get("ranges")
+    if ranges is None:
+        ranges = [{"from": p.get("from"), "to": p.get("to")}]
+    ranges = [r for r in ranges if r.get("from") or r.get("to")]
+    if not ranges:
+        return sel
+    t = U.t[sel]
+    hit = np.zeros(len(sel), bool)
+    for r in ranges:
+        hit |= _range_mask(t, r.get("from"), r.get("to"))
+    return sel[~hit] if p.get("mode") == "exclude" else sel[hit]
 
 
 def r_time_window(U, sel, p, _m):
