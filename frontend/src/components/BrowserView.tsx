@@ -13,7 +13,8 @@ export type ProjectCtx = {
   evalKey: string                       // ändert sich bei jeder neuen Auswertung
   distribution: [number, number][]      // [Tag-ms, Anzahl]
   count: number
-  onRange: (from: string, to: string, mode: 'include' | 'exclude') => void
+  onRange: (from: string, to: string, mode: 'include' | 'exclude' | 'slowmo') => void
+  canSlowmo: boolean
   onMarks: (ids: number[], mode: 'include' | 'exclude' | 'clear') => Promise<void>
 }
 
@@ -99,7 +100,7 @@ export function BrowserView({ sources, project }: { sources?: number[]; project?
         </div>
         <span className="muted small">{fmtNum(total)} Bilder · {buckets.length} Tage
           {project && <> · <b style={{ color: 'var(--accent)' }}>{fmtNum(project.count)} ausgewählt</b></>}</span>
-        <span className="muted small hide-mobile">· im Histogramm ziehen: {project ? 'Zeitraum ausschließen/behalten' : 'hinspringen'}</span>
+        <span className="muted small hide-mobile">· im Histogramm ziehen: {project ? 'Zeitraum ausschließen, behalten oder Zeitlupe' : 'hinspringen'}</span>
         <div className="spacer" />
         {project && (
           <label className="row small"><input type="checkbox" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} />nur Auswahl</label>
@@ -125,6 +126,8 @@ export function BrowserView({ sources, project }: { sources?: number[]; project?
         <div className="range-choice">
           <span>Zeitraum <b>{pendingRange.label}</b>:</span>
           <button className="primary" onClick={() => { project.onRange(pendingRange.from, pendingRange.to, 'exclude'); setPendingRange(null) }}>Ausschließen</button>
+          <button disabled={!project.canSlowmo} title={project.canSlowmo ? 'mehr Bilder in diesem Zeitraum → läuft langsamer' : 'braucht eine Regel „Jedes n-te Bild“ oder „Ein Bild pro Intervall“'}
+            onClick={() => { project.onRange(pendingRange.from, pendingRange.to, 'slowmo'); setPendingRange(null) }}>Zeitlupe</button>
           <button onClick={() => { project.onRange(pendingRange.from, pendingRange.to, 'include'); setPendingRange(null) }}>Nur diesen behalten</button>
           <button className="ghost" onClick={() => { grid.current?.scrollToDay(pendingRange.from.slice(0, 10)); setPendingRange(null) }}>Nur hinspringen</button>
           <button className="ghost icon" onClick={() => setPendingRange(null)}>✕</button>

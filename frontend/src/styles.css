@@ -264,3 +264,6 @@ pre.log { max-height: 320px; overflow: auto; background: var(--surface-2); paddi
 .range-row { flex-wrap: nowrap; gap: 4px; }
 .range-row input { flex: 1 1 0; min-width: 0; width: 0; font-size: 12px; padding: 5px 4px; }
 .range-choice { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--accent-soft); border-bottom: 1px solid var(--border); }
+.slowmo { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.slowmo-zone { gap: 4px; padding: 6px; border-radius: 8px; background: var(--accent-soft); }
+.slowmo-zone select { font-size: 12px; padding: 3px 4px; }

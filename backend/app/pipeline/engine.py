@@ -265,13 +265,37 @@ def r_order(_U, sel, p, _m):
     return sel[::-1] if p.get("direction") == "desc" else sel
 
 
+def with_slowmo(fn, key: str):
+    """Zeitlupen-Bereiche für Ausdünnungs-Regeln: in den Bereichen gilt ein eigener Wert (z. B. n=1 statt 12).
+
+    params.slowmo = [{from, to, <key>: wert}, …]; überlappen Bereiche, gilt der erste. Alles außerhalb
+    wird mit dem normalen Wert ausgedünnt. Da die Ausgabe konstante fps hat, läuft ein Bereich mit
+    k-mal mehr Bildern k-mal langsamer ab.
+    """
+    def wrapped(U, sel, p, m):
+        zones = [z for z in (p.get("slowmo") or []) if (z.get("from") or z.get("to")) and z.get(key)]
+        if not zones:
+            return fn(U, sel, p, m)
+        t = U.t[sel]
+        rest = np.ones(len(sel), bool)
+        parts = []
+        for z in zones:
+            inside = rest & _range_mask(t, z.get("from"), z.get("to"))
+            rest &= ~inside
+            if inside.any():
+                parts.append(fn(U, sel[inside], {**p, key: z[key]}, m))
+        parts.append(fn(U, sel[rest], p, m))
+        return np.sort(np.concatenate(parts)) if parts else sel
+    return wrapped
+
+
 RULES = {
     "sources": r_sources,          # S-1
     "date_range": r_date_range,    # S-2
     "time_window": r_time_window,  # S-3
     "weekdays": r_weekdays,        # S-4
-    "nth": r_nth,                  # S-5
-    "interval": r_interval,        # S-6
+    "nth": with_slowmo(r_nth, "n"),                   # S-5 (+ Zeitlupe)
+    "interval": with_slowmo(r_interval, "interval_s"),  # S-6 (+ Zeitlupe)
     "limit": r_limit,              # S-7
     "brightness": r_brightness,    # S-8
     "dedupe": r_dedupe,            # S-9

@@ -8,4 +8,4 @@ cd backend
 ../.venv/bin/python -m app.worker &
 WORKER=$!
 trap 'kill $WORKER 2>/dev/null' EXIT
-../.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --no-access-log
+../.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --no-access-log --reload --reload-dir app

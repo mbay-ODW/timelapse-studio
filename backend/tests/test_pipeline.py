@@ -157,3 +157,19 @@ def test_date_range_exclude_and_multiple_ranges():
     ex2 = run(U, [{"type": "date_range", "params": {"mode": "exclude", "ranges": [
         {"from": "2026-06-01T00:00", "to": "2026-06-01T06:00"}, {"from": "", "to": ""}]}}])
     assert len(ex2.sel) == 144 - 12
+
+
+def test_slowmo_zones_nth_and_interval():
+    U = make(SERIES)  # 01.–03.06., alle 30 min
+    # normal jedes 12. Bild (alle 6 h), am 02.06. jedes Bild → dort 12× langsamer
+    r = run(U, [{"type": "nth", "params": {"n": 12, "slowmo": [{"from": "2026-06-02", "to": "2026-06-02", "n": 1}]}}])
+    days = [int((U.t[i] - START) // DAY_MS) for i in r.sel]
+    assert days.count(1) == 48 and days.count(0) == 4 and days.count(2) == 4
+    assert list(U.t[r.sel]) == sorted(U.t[r.sel])
+    # Intervall: normal 1/Tag, 03.06. 12–14 Uhr stündlich
+    r = run(U, [{"type": "interval", "params": {"interval_s": 86400, "strategy": "first",
+                 "slowmo": [{"from": "2026-06-03T12:00", "to": "2026-06-03T14:00", "interval_s": 3600}]}}])
+    assert len(r.sel) == 3 + 2  # 3 Tagesbilder + 12:00 und 13:00 (12:00 liegt nicht im Tages-Rest)
+    # leere/ungültige Zonen werden ignoriert
+    r = run(U, [{"type": "nth", "params": {"n": 12, "slowmo": [{"from": "", "to": "", "n": 1}]}}])
+    assert len(r.sel) == 12

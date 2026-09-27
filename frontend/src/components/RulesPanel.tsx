@@ -163,6 +163,7 @@ function RuleEditor({ rule, onChange, sources, evaluation, onClearMarks }: {
         <div className="row wrap">
           <label className="field">jedes n-te<Num value={p.n} min={1} onChange={(v) => set({ n: Math.max(1, Math.round(v)) })} /></label>
           <label className="field">Offset<Num value={p.offset ?? 0} min={0} onChange={(v) => set({ offset: Math.max(0, Math.round(v)) })} /></label>
+          <SlowmoEditor rule={rule} onChange={onChange} valueKey="n" />
         </div>
       )
     case 'interval': {
@@ -189,6 +190,7 @@ function RuleEditor({ rule, onChange, sources, evaluation, onClearMarks }: {
             </label>
             {p.strategy === 'nearest' && <label className="field">Uhrzeit<input type="time" value={p.at ?? '12:00'} onChange={(e) => set({ at: e.target.value })} /></label>}
           </div>
+          <SlowmoEditor rule={rule} onChange={onChange} valueKey="interval_s" />
         </div>
       )
     }
@@ -230,4 +232,50 @@ function RuleEditor({ rule, onChange, sources, evaluation, onClearMarks }: {
     default:
       return null
   }
+}
+
+type Zone = { from: string; to: string; n?: number; interval_s?: number }
+
+const fmtIv = (sec: number) => sec % 86400 === 0 ? `${sec / 86400} Tag(e)` : sec % 3600 === 0 ? `${sec / 3600} h` : `${Math.round(sec / 60)} min`
+
+/** Zeitlupen-Bereiche: im Zeitraum mehr Bilder behalten → läuft bei konstanten fps langsamer ab. */
+function SlowmoEditor({ rule, onChange, valueKey }: { rule: Rule; onChange: (r: Rule) => void; valueKey: 'n' | 'interval_s' }) {
+  const zones: Zone[] = rule.params.slowmo ?? []
+  const base: number = rule.params[valueKey] ?? (valueKey === 'n' ? 1 : 3600)
+  const setZones = (z: Zone[]) => onChange({ ...rule, params: { ...rule.params, slowmo: z } })
+  const upd = (k: number, patch: Partial<Zone>) => setZones(zones.map((z, j) => (j === k ? { ...z, ...patch } : z)))
+  const def = valueKey === 'n' ? Math.max(1, Math.round(base / 5)) : Math.max(60, Math.round(base / 5 / 60) * 60)
+  return (
+    <div className="slowmo" style={{ flexBasis: '100%' }}>
+      <div className="row"><b className="small grow">Zeitlupe</b>
+        <button className="ghost small" onClick={() => setZones([...zones, { from: '', to: '', [valueKey]: def }])}>+ Bereich</button></div>
+      {zones.length === 0 && <div className="muted small">Mehr Bilder in einem Zeitraum → läuft dort langsamer. Auch per Ziehen im Histogramm.</div>}
+      {zones.map((z, k) => {
+        const withTime = z.from.includes('T') || z.to.includes('T')
+        const type = withTime ? 'datetime-local' : 'date'
+        const v = z[valueKey] ?? def
+        const factor = base / Math.max(v, 1)
+        return (
+          <div key={k} className="stack slowmo-zone">
+            <div className="row range-row">
+              <input type={type} value={z.from} title="von" onChange={(e) => upd(k, { from: e.target.value })} />
+              <span className="muted">–</span>
+              <input type={type} value={z.to} title={withTime ? 'bis (exklusiv)' : 'bis (inklusive)'} onChange={(e) => upd(k, { to: e.target.value })} />
+              <button className="icon ghost" title="Bereich entfernen" onClick={() => setZones(zones.filter((_, j) => j !== k))}>✕</button>
+            </div>
+            <div className="row small">
+              {valueKey === 'n'
+                ? <label className="row">jedes<Num value={v} min={1} style={{ width: 64 }} onChange={(x) => upd(k, { n: Math.max(1, Math.round(x)) })} />. Bild</label>
+                : <label className="row">1 Bild pro
+                    <select value={v} onChange={(e) => upd(k, { interval_s: Number(e.target.value) })}>
+                      {[...new Set([60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, v])].sort((a, b) => a - b)
+                        .filter((x) => x <= base).map((x) => <option key={x} value={x}>{fmtIv(x)}</option>)}
+                    </select></label>}
+              <span className={'badge ' + (factor > 1 ? 'accent' : 'warn')}>{factor > 1 ? `≈ ${factor.toFixed(factor < 10 ? 1 : 0).replace('.', ',')}× langsamer` : 'nicht langsamer'}</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }

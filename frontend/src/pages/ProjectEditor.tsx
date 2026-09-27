@@ -80,8 +80,22 @@ export function ProjectEditor() {
     try { setProject(await api.patch<Project>(`/api/projects/${pid}`, { name })) } catch (e) { toastError(e) }
   }
 
-  const setDateRange = (from: string, to: string, mode: 'include' | 'exclude') => {
+  const setDateRange = (from: string, to: string, mode: 'include' | 'exclude' | 'slowmo') => {
     const range = { from, to }
+    if (mode === 'slowmo') {
+      // an die letzte aktive Ausdünnungs-Regel hängen: Standard = 5× mehr Bilder als normal
+      let i = -1
+      rules.forEach((r, j) => { if (r.enabled && (r.type === 'nth' || r.type === 'interval')) i = j })
+      if (i < 0) { toastError('Für Zeitlupe braucht es eine Regel „Jedes n-te Bild“ oder „Ein Bild pro Intervall“'); return }
+      const r = rules[i]
+      const key = r.type === 'nth' ? 'n' : 'interval_s'
+      const base = Number(r.params[key] ?? 1)
+      const val = key === 'n' ? Math.max(1, Math.round(base / 5)) : Math.max(60, Math.round(base / 5 / 60) * 60)
+      const slowmo = [...(r.params.slowmo ?? []), { ...range, [key]: val }]
+      saveRules(rules.map((x, j) => (j === i ? { ...x, params: { ...x.params, slowmo } } : x)))
+      toast(`Zeitlupe ≈ ${(base / val).toFixed(1).replace('.', ',')}×: ${from.replace('T', ' ')} – ${to.replace('T', ' ')}`)
+      return
+    }
     const same = (r: Rule) => r.type === 'date_range' && (r.params.mode ?? 'include') === mode
     const i = rules.findIndex(same)
     let next: Rule[]
@@ -114,6 +128,7 @@ export function ProjectEditor() {
 
   const ctx: ProjectCtx | undefined = useMemo(() => ev ? {
     id: pid, evalKey: ev.key, distribution: ev.distribution, count: ev.count, onRange: setDateRange, onMarks: setMarks,
+    canSlowmo: rules.some((r) => r.enabled && (r.type === 'nth' || r.type === 'interval')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   } : undefined, [ev, pid, rules])
 
