@@ -1,74 +1,57 @@
-# Timelapse Studio – Portainer-Stack
-# Mounts wie bei Immich getrennt:
-#   CONFIG_PATH (klein, kritisch: SQLite mit Projekten/Presets/Queue)  → z. B. /mnt/apps/timelapse
-#   MEDIA_PATH  (groß: thumbs, proxies, uploads, renders, tmp)          → z. B. /mnt/bulk/timelapse-studio
-#   Quellen read-only unter /sources/<name>
-x-common: &common
-  image: ${IMAGE:-timelapse-studio:latest}
+# Timelapse Studio – einfacher Start mit Docker Compose
+#
+#   docker compose up -d --build        →  http://localhost:8080
+#
+# Bildquellen: jeder Unterordner von SOURCES_PATH wird eine eigene Quelle (read-only eingebunden).
+# Hinter einem Reverse-Proxy mit Login siehe deploy/docker-compose.traefik.yml.
+x-app: &app
+  image: timelapse-studio:latest
+  build: .
   restart: unless-stopped
-  user: "${PUID:-568}:${PGID:-568}"
-  environment: &env
+  user: "${PUID:-1000}:${PGID:-1000}"
+  environment:
     TZ: ${TZ:-Europe/Berlin}
     HWACCEL: ${HWACCEL:-none}
     MAX_PARALLEL_RENDERS: ${MAX_PARALLEL_RENDERS:-1}
-    FFMPEG_THREADS: ${FFMPEG_THREADS:-5}
-    INDEX_WORKERS: ${INDEX_WORKERS:-10}
-    THUMB_SIZE: ${THUMB_SIZE:-320}
-    RENDER_WINDOW: ${RENDER_WINDOW:-}
+    INDEX_WORKERS: ${INDEX_WORKERS:-8}
     SCAN_INTERVAL_MIN: ${SCAN_INTERVAL_MIN:-60}
-    RENDERS_RETENTION_DAYS: ${RENDERS_RETENTION_DAYS:-0}
     NTFY_URL: ${NTFY_URL:-}
     NTFY_TOPIC: ${NTFY_TOPIC:-}
     NTFY_TOKEN: ${NTFY_TOKEN:-}
-  volumes: &vols
-    - ${CONFIG_PATH:-/mnt/apps/timelapse}:/config
-    - ${MEDIA_PATH:-/mnt/bulk/timelapse-studio}:/media
-    - ${SNAPSHOT_SOURCE:-/mnt/bulk/Timelapse/@Snapshot}:/sources/cc400w:ro
+  volumes:
+    - ${CONFIG_PATH:-./data/config}:/config            # SQLite-Datenbank (klein, sichern!)
+    - ${MEDIA_PATH:-./data/media}:/media               # Thumbnails, Uploads, Renders (groß)
+    - ${SOURCES_PATH:-./data/sources}:/sources:ro      # Bildquellen, nur lesend
   depends_on:
     init:
       condition: service_completed_successfully
 
 services:
-  init:
+  init:   # legt Verzeichnisse an und setzt Besitzer (läuft einmal als root)
     image: busybox:1.37
     user: "0:0"
     command: >
-      sh -c "mkdir -p /config /media/thumbs /media/proxies /media/uploads /media/renders /media/tmp
-      && chown ${PUID:-568}:${PGID:-568} /config /media /media/thumbs /media/proxies /media/uploads /media/renders /media/tmp
-      && chown -R ${PUID:-568}:${PGID:-568} /config"
+      sh -c "mkdir -p /config /media && chown -R ${PUID:-1000}:${PGID:-1000} /config
+      && chown ${PUID:-1000}:${PGID:-1000} /media"
     volumes:
-      - ${CONFIG_PATH:-/mnt/apps/timelapse}:/config
-      - ${MEDIA_PATH:-/mnt/bulk/timelapse-studio}:/media
+      - ${CONFIG_PATH:-./data/config}:/config
+      - ${MEDIA_PATH:-./data/media}:/media
     restart: "no"
 
   app:
-    <<: *common
+    <<: *app
     container_name: timelapse-studio
-    mem_limit: 768m
-    networks: [default, traefik]
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=traefik
-      - traefik.http.routers.timelapse.rule=Host(`${DOMAIN:-timelapse.example.com}`)
-      - traefik.http.routers.timelapse.entrypoints=websecure
-      - traefik.http.routers.timelapse.tls=true
-      - traefik.http.routers.timelapse.tls.certresolver=mydnschallenge
-      - traefik.http.routers.timelapse.middlewares=middlewares-rate-limit@file,middlewares-authelia@file,middlewares-secure-headers@file
-      - traefik.http.services.timelapse.loadbalancer.server.port=8080
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
 
   worker:
-    <<: *common
+    <<: *app
     container_name: timelapse-studio-worker
     command: ["python", "-m", "app.worker"]
     healthcheck:
       disable: true
-    mem_limit: 2g
     stop_grace_period: 20s
-    group_add: ["${RENDER_GID:-107}", "${VIDEO_GID:-44}"]
-    devices:
-      - /dev/dri:/dev/dri
-    networks: [default]
-
-networks:
-  traefik:
-    external: true
+    # Intel/AMD-GPU fürs Encoding (HWACCEL=vaapi): einkommentieren und Gruppen-IDs des Hosts eintragen
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add: ["render", "video"]

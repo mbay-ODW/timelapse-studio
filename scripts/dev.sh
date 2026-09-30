@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lokaler Dev-Stack: API (:8080) + Worker gegen ./dev-data
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 RUN=${DEV_RUN:-run1}
 export CONFIG_DIR=$PWD/dev-data/$RUN/config MEDIA_DIR=$PWD/dev-data/$RUN/media SOURCES_DIR=$PWD/dev-data/sources TZ=Europe/Berlin INDEX_WORKERS=4
 cd backend

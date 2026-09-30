@@ -1,0 +1,79 @@
+# Timelapse Studio hinter Traefik mit ForwardAuth (z. B. Authelia), inkl. VAAPI – z. B. als Portainer-Stack.
+#
+# Pflicht-Variablen (Stack-ENV / .env):
+#   DOMAIN               Hostname, z. B. timelapse.example.com
+#   TRAEFIK_MIDDLEWARES  Middleware-Kette MIT Login, z. B. "authelia@docker" – ohne Login wäre die App offen,
+#                        deshalb startet der Stack ohne diese Variable bewusst nicht
+#   CONFIG_PATH          schneller Speicher für die Datenbank
+#   MEDIA_PATH           großer Speicher für Thumbnails/Uploads/Renders
+#   SOURCE_PATH          Bildordner (wird read-only als Quelle SOURCE_NAME eingebunden)
+x-app: &app
+  image: ${IMAGE:-timelapse-studio:latest}
+  restart: unless-stopped
+  user: "${PUID:-1000}:${PGID:-1000}"
+  environment:
+    TZ: ${TZ:-Europe/Berlin}
+    HWACCEL: ${HWACCEL:-none}
+    MAX_PARALLEL_RENDERS: ${MAX_PARALLEL_RENDERS:-1}
+    FFMPEG_THREADS: ${FFMPEG_THREADS:-5}
+    INDEX_WORKERS: ${INDEX_WORKERS:-10}
+    THUMB_SIZE: ${THUMB_SIZE:-320}
+    RENDER_WINDOW: ${RENDER_WINDOW:-}
+    SCAN_INTERVAL_MIN: ${SCAN_INTERVAL_MIN:-60}
+    RENDERS_RETENTION_DAYS: ${RENDERS_RETENTION_DAYS:-0}
+    NTFY_URL: ${NTFY_URL:-}
+    NTFY_TOPIC: ${NTFY_TOPIC:-}
+    NTFY_TOKEN: ${NTFY_TOKEN:-}
+  volumes:
+    - ${CONFIG_PATH:?CONFIG_PATH fehlt}:/config
+    - ${MEDIA_PATH:?MEDIA_PATH fehlt}:/media
+    - ${SOURCE_PATH:?SOURCE_PATH fehlt}:/sources/${SOURCE_NAME:-kamera}:ro
+  depends_on:
+    init:
+      condition: service_completed_successfully
+
+services:
+  init:
+    image: busybox:1.37
+    user: "0:0"
+    command: >
+      sh -c "mkdir -p /config /media/thumbs /media/proxies /media/uploads /media/renders /media/tmp
+      && chown ${PUID:-1000}:${PGID:-1000} /config /media /media/thumbs /media/proxies /media/uploads /media/renders /media/tmp
+      && chown -R ${PUID:-1000}:${PGID:-1000} /config"
+    volumes:
+      - ${CONFIG_PATH:?CONFIG_PATH fehlt}:/config
+      - ${MEDIA_PATH:?MEDIA_PATH fehlt}:/media
+    restart: "no"
+
+  app:
+    <<: *app
+    container_name: timelapse-studio
+    mem_limit: 768m
+    networks: [default, traefik]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.http.routers.timelapse.rule=Host(`${DOMAIN:?DOMAIN fehlt}`)
+      - traefik.http.routers.timelapse.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.timelapse.tls=true
+      - traefik.http.routers.timelapse.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.routers.timelapse.middlewares=${TRAEFIK_MIDDLEWARES:?TRAEFIK_MIDDLEWARES fehlt – ohne Login-Middleware wäre die App offen}
+      - traefik.http.services.timelapse.loadbalancer.server.port=8080
+
+  worker:
+    <<: *app
+    container_name: timelapse-studio-worker
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      disable: true
+    mem_limit: 2g
+    stop_grace_period: 20s
+    group_add: ["${RENDER_GID:-107}", "${VIDEO_GID:-44}"]
+    devices:
+      - /dev/dri:/dev/dri
+    networks: [default]
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-traefik}
+    external: true

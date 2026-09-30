@@ -9,3 +9,6 @@ backend/app/static/
 dev-data/
 *.tar.gz
 .DS_Store
+.claude/
+.local/
+data/
