@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RUN=${DEV_RUN:-run1}
-export CONFIG_DIR=$PWD/dev-data/$RUN/config MEDIA_DIR=$PWD/dev-data/$RUN/media SOURCES_DIR=$PWD/dev-data/sources TZ=Europe/Berlin INDEX_WORKERS=4
+export CONFIG_DIR=${DEV_CONFIG:-$PWD/dev-data/$RUN/config} MEDIA_DIR=${DEV_MEDIA:-$PWD/dev-data/$RUN/media} SOURCES_DIR=${DEV_SOURCES:-$PWD/dev-data/sources} TZ=Europe/Berlin INDEX_WORKERS=4
 cd backend
 ../.venv/bin/python -m app.worker &
 WORKER=$!
